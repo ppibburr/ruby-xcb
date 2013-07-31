@@ -6,10 +6,34 @@ module WM
   class EllipseWM < WM::ReparentingManager
     # Extend's the WM::Client base
     class self::Client < WM::Client
+      BORDER = WM::RED
+    
+      def remove_events
+        [window, frame_window].each do |w|
+          next unless w
+
+          mask = XCB::CW_EVENT_MASK
+          values = FFI::MemoryPointer.new(:uint32)
+          values.write_array_of_uint32([XCB::NONE])
+          w.configure(mask,values)
+        end
+      end
+      
+      def apply_events
+        [window, frame_window].each do |w|
+          next unless w
+        
+          mask = XCB::CW_EVENT_MASK
+          values = FFI::MemoryPointer.new(:uint32)
+          values.write_array_of_uint32([FRAME_SELECT_INPUT_EVENT_MASK])
+          w.configure(mask,values)
+        end   
+      end
+    
       # Draws a coloured border around the client when focused
       def render_active_hint
          XCB::debug true
-         colcookie = XCB::alloc_color(manager.connection, manager.screen[:default_colormap], 50000, 32000, 0);
+         colcookie = XCB::alloc_color(manager.connection, manager.screen[:default_colormap], *self.class::BORDER);
          reply = XCB::alloc_color_reply(manager.connection, colcookie, nil);
          values=ary2pary([reply[:pixel]]);
          XCB::change_window_attributes(manager.connection, get_window.id, XCB::CW_BORDER_PIXEL, values);  
@@ -24,20 +48,85 @@ module WM
          XCB::flush(manager.connection)      
          get_window.configure(XCB::CONFIG_WINDOW_BORDER_WIDTH, ary2pary([0]));    
       end    
+      
+      def add_transient w
+        c = super
+        
+        position_transient(c)
+        c.focus()
+        
+        return c
+      end
+      
+      def position_transient t
+        p :IN_TRANS_POS
+        p self.get_window.id
+        p t.get_window.id
+        
+        ox,oy,ow,oh = rect()
+        p [ox,oy,ow,oh]
+        x,y,w,h = t.rect()
+        p [x,y,w,h]
+        x = ox+15
+        y = oy+15
+        
+        if w >= nw=ow-30
+          w = nw
+        end
+        
+        if h >= nh=oh-30
+          h = nh
+        end
+        
+        p [x,y,w,h]
+        
+        t.set_rect x,y,w,h
+      end
+      
+      def raise
+        get_window.raise()
+        
+        transients.each do |c|
+          c.raise()
+        end
+      end
+      
+      def focus()
+        a = [get_window()]
+        transients.each do |t| a << t end
+        a.last.focus()
+      end
+      
+      def set_rect *o
+        super *o
+        remove_events()
+        # position our tranient windows
+        transients.each do |tc|
+          tc.remove_events()
+          position_transient(tc) 
+        end
+        
+        transients.each do |tc|
+          tc.apply_events() 
+        end
+               
+        apply_events()       
+      end
     
       # We've been entered (moused over)
       def on_enter e
+        p :IN_CLIENT_ENTER
         # 'master' is moot if we are the master
-      
+        XCB::grab_server(manager.connection)
         # Ensure the 'master' is one below us
         a = manager.get_active_client()
-        a.get_window().raise if a
+        a.raise() if a unless get_transient_for() # unless we are a transient
         
         # overlap the 'master'
-        get_window.raise
+        self.raise()
         # take focus
-        get_window.focus
-        
+        self.focus()
+        XCB::ungrab_server(manager.connection)
         # draw border
         render_active_hint()
       end
@@ -71,16 +160,24 @@ module WM
     def manage w
       super
       
+      # transients don't get 'master'
+      c = find_client_by_window(w) 
+      p [:MANAGE,:TRANSIENT] if c.get_transient_for()  
+      return if c.get_transient_for()
+      
       # new client becomes the 'master'
       set_active(clients.last,true)  
     end
     
     def unmanage(w)
       # Find out if the 'master' window is to be removed
-      bool = find_client_by_window(w) == @active
+      bool = (c=find_client_by_window(w)) == @active
       bool = !!@active and bool
       
       super
+
+      # no update neccessary
+      return if c and c.get_transient_for()
 
       # Reset positioning
       @current_degree = 0
@@ -97,6 +194,16 @@ module WM
       end
     end
    
+    def manage_transient(w,tw)
+      if !(c=find_client_by_window(tw))
+        p :THE_TRANSIENT_FOR_IS_NOT_KNOWN
+        manage(tw)
+        c=find_client_by_window(tw)
+      end
+      
+      c.add_transient(w)
+    end
+    
     def get_active_client
       @active
     end   
@@ -104,7 +211,8 @@ module WM
     # @param Boolean bool, true if the client is newly managed, false to perform a swap
     def set_active c,bool=false
       return unless c
-      
+      return if c.get_transient_for
+            
       # store current 'master'
       o = @active
       
@@ -146,8 +254,16 @@ module WM
     #
     # @param WM::Client a, the client to be the 'master', defaults to newest managed client
     def draw a = clients.last
+      return unless a
+      if c=a.get_transient_for
+        p :asked_to_active_transient
+        p @active
+        a = c
+      end
+      
       clients.each do |c|
         next if c == a
+        next if c.get_transient_for()
         
         c.set_rect *get_next_client_rect
       end

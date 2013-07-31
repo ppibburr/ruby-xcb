@@ -6,36 +6,36 @@ IDS = Marshal.load(open(api_info).read)
 
 module XCB
   module Helper
-	def struct n
-	  q = IDS.find do |q| q.key == "Struct" and q.value["name"] == n end
-	  return q if q
-	  return IDS.find do |q| q.key == "Union" and q.value["name"] == n end
-	end
+  def struct n
+    q = IDS.find do |q| q.key == "Struct" and q.value["name"] == n end
+    return q if q
+    return IDS.find do |q| q.key == "Union" and q.value["name"] == n end
+  end
 
-	def function n
-	  IDS.find do |q| q.key == "Function" and q.value["name"] == n end
-	end
+  def function n
+    IDS.find do |q| q.key == "Function" and q.value["name"] == n end
+  end
 
-	def field(id)
-	  IDS.find do |q| q.value["id"] == id end
-	end
+  def field(id)
+    IDS.find do |q| q.value["id"] == id end
+  end
 
-	def enum! n
-	  q = IDS.find do |q| q.key == "Enumeration" and q.value["EnumValue"].find do |e| e["name"] == n end end
-	  raise unless q
-	  q = q.value["EnumValue"].find do |e| e["name"] == n end
-	  q = q ? q["init"].to_i : nil
-	  raise unless q
-	  q
-	rescue => e
-	  raise "No Enum Found: #{n}"
-	end
+  def enum! n
+    q = IDS.find do |q| q.key == "Enumeration" and q.value["EnumValue"].find do |e| e["name"] == n end end
+    raise unless q
+    q = q.value["EnumValue"].find do |e| e["name"] == n end
+    q = q ? q["init"].to_i : nil
+    raise unless q
+    q
+  rescue => e
+    raise "No Enum Found: #{n}"
+  end
 
-	def find_id id
-	  IDS.find do |q|
-		q.value["id"] == id
-	  end
-	end  
+  def find_id id
+    IDS.find do |q|
+    q.value["id"] == id
+    end
+  end  
   end
 
   extend XCB::Helper
