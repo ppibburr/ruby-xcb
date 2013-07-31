@@ -10,7 +10,9 @@ module WM
                         XCB::EVENT_MASK_SUBSTRUCTURE_REDIRECT | 
                         XCB::EVENT_MASK_POINTER_MOTION | 
                         XCB::EVENT_MASK_BUTTON_PRESS |
-                        XCB::EVENT_MASK_BUTTON_RELEASE  
+                        XCB::EVENT_MASK_BUTTON_RELEASE | 
+                        XCB::EVENT_MASK_KEY_PRESS |
+                        XCB::EVENT_MASK_KEY_RELEASE                         
   
     attr_accessor :window,:manager
     def initialize win,mgr
@@ -144,6 +146,11 @@ module WM
     def set_rect x,y,w,h
       qw = get_window()
       qw.set_rect(x,y,w,h)
+      
+      if rect[0..1] != [x,y]
+        set_position(x,y)
+      end
+      
       window.resize(w,h) unless window.id == qw.id
     end
     

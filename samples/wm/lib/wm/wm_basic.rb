@@ -1,4 +1,13 @@
 module WM
+  KeyMods = {
+    # Mod (Mod1 == alt) (Mod4 == Super/windows) 
+    :MOD1            => XCB::MOD_MASK_1,
+    :MOD4		     => XCB::MOD_MASK_4,
+    :AltShift        => XCB::MOD_MASK_1 | XCB::MOD_MASK_SHIFT,   # 
+    :AltCtrl         => XCB::MOD_MASK_1 | XCB::MOD_MASK_CONTROL, # 
+    :Control         => XCB::MOD_MASK_CONTROL                    #
+  }
+  
   class Manager
     attr_accessor :clients,:screen,:connection
     def initialize screen,conn
@@ -156,6 +165,10 @@ module WM
       c.destroy() if c
     end
     
+    def on_key_press e
+    
+    end
+    
     # call init()
     # Loop over events and handle them
     def main
@@ -166,6 +179,9 @@ module WM
           next unless on_before_event(evt)
           
           case evt[:response_type] & ~0x80
+          when 2
+            evt = XCB::KEY_PRESS_EVENT_T.new(evt.to_ptr)
+            on_key_press(evt)
           when 7
             evt = XCB::ENTER_NOTIFY_EVENT_T.new(evt.to_ptr)
         

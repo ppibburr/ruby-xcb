@@ -4,12 +4,18 @@ module WM
   # 'orbiting' windows can be swapped into the 'master' position
   # 'orbiting' windows can be bi-directionly shifted.
   class EllipseWM < WM::ReparentingManager
+    GrabKeys = [
+      # Mask               Sym   Action  Arguments (optional)
+      [WM::KeyMods[:MOD1], 36,   :on_swap_key_press] # swap the focused window into 'master'
+    ]
+  
     # Extend's the WM::Client base
     class self::Client < WM::Client
       BORDER = WM::RED
     
       def remove_events
-        [window, frame_window].each do |w|
+        [window, frame_window]
+        [].each do |w|
           next unless w
 
           mask = XCB::CW_EVENT_MASK
@@ -20,7 +26,8 @@ module WM
       end
       
       def apply_events
-        [window, frame_window].each do |w|
+        [window, frame_window]
+        [].each do |w|
           next unless w
         
           mask = XCB::CW_EVENT_MASK
@@ -115,9 +122,6 @@ module WM
     
       # We've been entered (moused over)
       def on_enter e
-        p :IN_CLIENT_ENTER
-        # 'master' is moot if we are the master
-        XCB::grab_server(manager.connection)
         # Ensure the 'master' is one below us
         a = manager.get_active_client()
         a.raise() if a unless get_transient_for() # unless we are a transient
@@ -126,7 +130,7 @@ module WM
         self.raise()
         # take focus
         self.focus()
-        XCB::ungrab_server(manager.connection)
+
         # draw border
         render_active_hint()
       end
@@ -156,13 +160,20 @@ module WM
       @active_client_width = 800
       @active_client_height = 530    
     end
+    
+    def init
+      super
+      GrabKeys.each do |k|
+        XCB::grab_key(connection, 1, screen[:root], k[0], k[1], XCB::GRAB_MODE_ASYNC, XCB::GRAB_MODE_ASYNC);
+      end
+      XCB::flush connection
+    end
    
     def manage w
       super
       
       # transients don't get 'master'
-      c = find_client_by_window(w) 
-      p [:MANAGE,:TRANSIENT] if c.get_transient_for()  
+      c = find_client_by_window(w)  
       return if c.get_transient_for()
       
       # new client becomes the 'master'
@@ -196,12 +207,30 @@ module WM
    
     def manage_transient(w,tw)
       if !(c=find_client_by_window(tw))
-        p :THE_TRANSIENT_FOR_IS_NOT_KNOWN
         manage(tw)
         c=find_client_by_window(tw)
       end
       
       c.add_transient(w)
+    end
+    
+    def on_swap_key_press
+      i = `xdotool getwindowfocus`.strip.to_i
+      if c=find_client_by_window(i)
+        @active = nil
+        @current_degree = 0
+        @offset = 0
+        draw(c)
+      end
+    end
+    
+    def on_key_press(e)
+      GrabKeys.each do |q|
+        if q[0] == e[:state] and q[1] == e[:detail]
+          send q[2] if q.length == 3
+          send q[2],*q[3..q.length-1] if q.length > 3
+        end
+      end
     end
     
     def get_active_client
@@ -276,8 +305,8 @@ module WM
     # @param WM::Client c1, the 'a' client
     # @param WM::Client c2, the 'b' client
     def swap c1,c2
-      a = c1.rect
-      b = c2.rect
+      p a = c1.rect
+      p b = c2.rect
       c1.set_rect *b
       c2.set_rect *a
     end
