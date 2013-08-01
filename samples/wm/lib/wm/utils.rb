@@ -24,8 +24,8 @@ end
 module WM    
   # Some pre-defined colours
   RED   = [65535,0,0]
-  GREEN = [0,0,65535]
-  BLUE  = [0,65535,0]    
+  GREEN = [0,65535,0]
+  BLUE  = [0,0,65535]    
   BLACK = [0,0,0]
   WHITE = [65535,65535,65535]
         
@@ -69,3 +69,4 @@ module WM
   CONNECTION = XCB::connect(nil,screen_n)
   SCREEN = screen(CONNECTION,screen_n)
 end
+

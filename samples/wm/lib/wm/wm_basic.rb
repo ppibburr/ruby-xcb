@@ -1,3 +1,5 @@
+require File.expand_path(File.join(File.dirname(__FILE__),"wm_client.rb"))
+
 module WM
   KeyMods = {
     # Mod (Mod1 == alt) (Mod4 == Super/windows) 
@@ -9,6 +11,12 @@ module WM
   }
   
   class Manager
+    GrabKeys = []
+    
+    def self.add_key_binding(mod,sym,action,*o)
+      GrabKeys << [mod,sym,action].push(*o)
+    end
+  
     attr_accessor :clients,:screen,:connection
     def initialize screen,conn
       @screen = screen
@@ -70,7 +78,7 @@ module WM
     end
     
     def self.client_class
-      ::Client
+      self::Client
     end
     
     MANAGER_REPARENTING  = 0 # Will create a parent window for managed windows
@@ -163,10 +171,17 @@ module WM
     def unmanage(w)
       c = find_client_by_window w
       c.destroy() if c
-    end
+    end   
     
-    def on_key_press e
-    
+    def on_key_press(e)
+      GrabKeys.each do |q|
+        if q[0] == e[:state] and q[1] == e[:detail]
+          send q[2] if q.length == 3
+          send q[2],*q[3..q.length-1] if q.length > 3
+        end
+      end
+      
+      return e
     end
     
     # call init()
@@ -177,7 +192,8 @@ module WM
       loop do
         while (evt=XCB::wait_for_event(connection)).to_ptr != FFI::Pointer::NULL;
           next unless on_before_event(evt)
-          
+          q = evt[:response_type] & ~0x80
+          p q unless [6,12,34].index(q)
           case evt[:response_type] & ~0x80
           when 2
             evt = XCB::KEY_PRESS_EVENT_T.new(evt.to_ptr)
@@ -197,6 +213,7 @@ module WM
           when 10
 
           when 18
+            puts "GOT UNMAP _NOTIFY"
             evt = XCB::UNMAP_NOTIFY_EVENT_T.new(evt.to_ptr)
           
             if c = find_client_by_window(evt[:window])
@@ -226,6 +243,7 @@ module WM
             evt = XCB::CLIENT_MESSAGE_EVENT_T.new(evt.to_ptr)
 
           when XCB::DESTROY_NOTIFY
+            puts "GOT DESTROY"
             evt = XCB::DESTROY_NOTIFY_EVENT_T.new(evt.to_ptr)
 
             unmanage(evt[:event])  
@@ -286,6 +304,7 @@ module WM
     MANAGE_MODE = Manager::MANAGER_REPARENTING
   end  
 end
+
 
 
 

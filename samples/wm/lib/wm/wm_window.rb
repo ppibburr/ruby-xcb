@@ -46,26 +46,17 @@ module WM
     def rect
       geom = geom()
       return nil unless geom
-     
-      tree = XCB::query_tree_reply(connection,XCB::query_tree(connection,id),nil);
-      if (!tree) 
-        return nil;
-      end
-
-      translateCookie = XCB::translate_coordinates(connection,id,tree[:parent],geom[:x], geom[:y] );
-
-      trans = XCB::translate_coordinates_reply(connection,translateCookie,nil );
-    
-      if (!trans)
-        return nil;
-      end
-    
-      return [
-        trans[:dst_x],
-        trans[:dst_y],
+      
+      coords = [
+        geom[:x],
+        geom[:y],
         geom[:width],
         geom[:height]
       ]
+      
+      CLib.free(geom.to_ptr)
+    
+      return coords
     end
 
     def raise

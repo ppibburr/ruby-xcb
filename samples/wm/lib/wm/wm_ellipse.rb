@@ -1,150 +1,62 @@
+require File.expand_path(File.join(File.dirname(__FILE__),"wm_standard.rb"))
+require File.expand_path(File.join(File.dirname(__FILE__),"ellipse_client.rb"))
+
 module WM
-  # A Window Manager that positions windows in an ellipse around a centered 'master' window
+  #
+  # Elliptical layout
+  #
+  # A centered MASTER window, larger than it's orbitals
+  # Orbiting Windows around MASTER
   # Focus Follows Mouse
-  # 'orbiting' windows can be swapped into the 'master' position
-  # 'orbiting' windows can be bi-directionly shifted.
+  # Raise on Enter
+  # Stack Order is top: FOCUS, :next MASTER
+  #
+  # Here is a diagram of a focused orbital
+  # Note how it is inset to and above the master
+  #
+  #============================================#
+  #                    PAD_Y
+  #                   _________
+  # P                |         |________         
+  # A           _____|_________|        |___  P
+  # D          |               |  FOCUS |   | A
+  #            |       MASTER  |________|   | D
+  # X          |                    |_______|  
+  #            |____________________|   |     X
+  #                  |        |_________|
+  #                  |________|
+  #                    PAD_Y
+  #=============================================#
+  #
+  # KeyBindings exist to: swap an orbital with the current master
+  #                       swap an orbital with its previous sibling
+  #                                                    next sibling
+  #                       force a window to take focus (window at cursor location)
+  #                       toggle fullscreen mode
+  #                       kill a client
+  #
+  # Windows have 3 possible sizes/states: orbitial   (smallest)
+  #                                       master     (bigger)
+  #                                       fullscreen (largest)
+  # 
+  # Transient windows (ie, dialogs) are always stacked on top of its transient_for window
+  # When a window having transients is entered its transients are raised in creation order
+  # And the topmost transient is focused
   class EllipseWM < WM::ReparentingManager
-    GrabKeys = [
-      # Mask               Sym   Action  Arguments (optional)
-      [WM::KeyMods[:MOD1], 36,   :on_swap_key_press] # swap the focused window into 'master'
-    ]
+    include WM::StandardWM
   
-    # Extend's the WM::Client base
-    class self::Client < WM::Client
-      BORDER = WM::RED
-    
-      def remove_events
-        [window, frame_window]
-        [].each do |w|
-          next unless w
-
-          mask = XCB::CW_EVENT_MASK
-          values = FFI::MemoryPointer.new(:uint32)
-          values.write_array_of_uint32([XCB::NONE])
-          w.configure(mask,values)
-        end
-      end
-      
-      def apply_events
-        [window, frame_window]
-        [].each do |w|
-          next unless w
-        
-          mask = XCB::CW_EVENT_MASK
-          values = FFI::MemoryPointer.new(:uint32)
-          values.write_array_of_uint32([FRAME_SELECT_INPUT_EVENT_MASK])
-          w.configure(mask,values)
-        end   
-      end
-    
-      # Draws a coloured border around the client when focused
-      def render_active_hint
-         XCB::debug true
-         colcookie = XCB::alloc_color(manager.connection, manager.screen[:default_colormap], *self.class::BORDER);
-         reply = XCB::alloc_color_reply(manager.connection, colcookie, nil);
-         values=ary2pary([reply[:pixel]]);
-         XCB::change_window_attributes(manager.connection, get_window.id, XCB::CW_BORDER_PIXEL, values);  
-         XCB::flush(manager.connection)  
-         get_window.configure(XCB::CONFIG_WINDOW_BORDER_WIDTH, ary2pary([1]));    
-      end
-      
-      # Removes the coloured border when not focused
-      def remove_active_hint
-         values=ary2pary([0]);
-         XCB::change_window_attributes(manager.connection, get_window.id, XCB::CW_BORDER_PIXEL, values);  
-         XCB::flush(manager.connection)      
-         get_window.configure(XCB::CONFIG_WINDOW_BORDER_WIDTH, ary2pary([0]));    
-      end    
-      
-      def add_transient w
-        c = super
-        
-        position_transient(c)
-        c.focus()
-        
-        return c
-      end
-      
-      def position_transient t
-        p :IN_TRANS_POS
-        p self.get_window.id
-        p t.get_window.id
-        
-        ox,oy,ow,oh = rect()
-        p [ox,oy,ow,oh]
-        x,y,w,h = t.rect()
-        p [x,y,w,h]
-        x = ox+15
-        y = oy+15
-        
-        if w >= nw=ow-30
-          w = nw
-        end
-        
-        if h >= nh=oh-30
-          h = nh
-        end
-        
-        p [x,y,w,h]
-        
-        t.set_rect x,y,w,h
-      end
-      
-      def raise
-        get_window.raise()
-        
-        transients.each do |c|
-          c.raise()
-        end
-      end
-      
-      def focus()
-        a = [get_window()]
-        transients.each do |t| a << t end
-        a.last.focus()
-      end
-      
-      def set_rect *o
-        super *o
-        remove_events()
-        # position our tranient windows
-        transients.each do |tc|
-          tc.remove_events()
-          position_transient(tc) 
-        end
-        
-        transients.each do |tc|
-          tc.apply_events() 
-        end
-               
-        apply_events()       
-      end
-    
-      # We've been entered (moused over)
-      def on_enter e
-        # Ensure the 'master' is one below us
-        a = manager.get_active_client()
-        a.raise() if a unless get_transient_for() # unless we are a transient
-        
-        # overlap the 'master'
-        self.raise()
-        # take focus
-        self.focus()
-
-        # draw border
-        render_active_hint()
-      end
-      
-      # Bye Bye Mouse
-      def on_leave e
-        # remove the border
-        remove_active_hint()
-      end
-    end
-    
-    # Overide to use our 'client' class
-    def self.client_class
-      self::Client
+    [
+      # Mask                   Sym   Action  Arguments (optional)
+      # Alt1                   # Enter
+      [WM::KeyMods[:MOD1],     36,   :on_swap_key_press],            # swap the focused window into 'master'
+                               # F
+      [WM::KeyMods[:MOD1],     41,   :on_fullscreen_key_press],      # toggle fullscreen
+                               # Left
+      [WM::KeyMods[:MOD1],     113,  :on_swap_previous_key_press],   # swap focused 1 position prior
+                               # Right
+      [WM::KeyMods[:MOD1],     114,  :on_swap_next_key_press],       # swap focused 1 position next
+    ].each do |key_bind|
+      add_key_binding(*key_bind)
     end
    
     attr_accessor :inactive_client_width,:inactive_client_height,:active_client_width,:active_client_height
@@ -204,34 +116,110 @@ module WM
         draw(@active)
       end
     end
-   
-    def manage_transient(w,tw)
-      if !(c=find_client_by_window(tw))
-        manage(tw)
-        c=find_client_by_window(tw)
-      end
-      
-      c.add_transient(w)
-    end
     
-    def on_swap_key_press
-      i = `xdotool getwindowfocus`.strip.to_i
-      if c=find_client_by_window(i)
-        @active = nil
-        @current_degree = 0
-        @offset = 0
-        draw(c)
-      end
-    end
-    
-    def on_key_press(e)
-      GrabKeys.each do |q|
-        if q[0] == e[:state] and q[1] == e[:detail]
-          send q[2] if q.length == 3
-          send q[2],*q[3..q.length-1] if q.length > 3
+    def on_fullscreen_key_press()
+      if c=get_focused_client()
+        if c.rect[2..3] != [screen[:width_in_pixels]-2,screen[:height_in_pixels]-2]
+          c.set_rect(0,0,screen[:width_in_pixels]-2,screen[:height_in_pixels]-2)
+        else
+          if c == @active
+            @active.set_rect *get_active_rect()
+          end
+          
+          draw @active
         end
       end
     end
+    
+    def on_swap_key_press
+      if c=get_focused_client()
+        set_active(c) unless c.get_transient_for()
+        @active.raise()
+        @active.focus()
+        
+        x,y = @active.rect[2..3].map do |q| q * 0.5 end
+        XCB::warp_pointer(connection, 0, @active.get_window.id, 0,0,0,0,x,y);
+        XCB::flush connection
+      end
+    end
+    
+    def on_swap_next_key_press()
+      if c=get_focused_client()
+        ica = clients.find_all do |q| q != @active end
+        if i1 = ica.index(c)
+          sc = nil
+          if i1 < ica.length-1
+            sc = ica.find do |q| ica.index(q) == i1+1 end
+          else
+            sc = ica[0]
+          end
+          
+          return if sc == c
+          
+          swap c,sc
+          x,y = c.rect[2..3].map do |q| q * 0.5 end
+          XCB::warp_pointer(connection, XCB::NONE, c.get_window.id, 0, 0, 0, 0, x, y);
+        end
+      end
+    end
+    
+    def on_swap_previous_key_press()
+      if c=get_focused_client()
+        ica = clients.find_all do |q| q != @active end
+        if i1 = ica.index(c)
+          sc = nil
+          if i1 > 0
+            sc = ica.find do |q| ica.index(q) == i1-1 end
+          else
+            sc = ica.last
+          end
+          
+          return if sc == c
+          
+          swap c,sc
+          x,y = c.rect[2..3].map do |q| q * 0.5 end
+          XCB::warp_pointer(connection, XCB::NONE, c.get_window.id, 0, 0, 0, 0, x, y);          
+        end
+      end
+    end    
+    
+    # Gets the client at point x,y
+    # Order of matching is as follows:
+    #   if a focused 'orbital' contains the point it is returned
+    #   if the 'master' contains point, the master is returned
+    #   if an orbital contains the point, it is returned
+    #
+    # NOTE: when an orbital is raised but not focused, the section overlapping 'master' will not belong to it
+    def client_at(qx,qy)
+      # Focused orbital overides @active
+      if c=get_focused_client()
+        x,y,w,h = c.rect
+        x1 = x + w
+        y1 = y + h
+     
+        return c if (qx >= x and qx <= x1) and (qy >= y and qy <= y1)    
+      end
+     
+      # @active overides the other orbital's
+      x,y,w,h = @active.rect
+      x1 = x + w
+      y1 = y + h
+            
+      return @active if (qx >= x and qx <= x1) and (qy >= y and qy <= y1)
+
+      # an orbital or nil
+      if hit=clients.find do |c|
+      
+          x,y,w,h = c.rect
+          x1 = x + w
+          y1 = y + h
+            
+          (qx >= x and qx <= x1) and (qy >= y and qy <= y1)
+        end
+
+        return hit
+      end
+    end 
     
     def get_active_client
       @active
@@ -258,23 +246,13 @@ module WM
       
       # apply the focus hint to the new 'master'
       @active.render_active_hint()
-          
-      if o
-        if bool
-          # the new 'master' is newly managed
-          # we get the next rect in the layout and apply to the previous 'master'
-          o.set_rect *get_next_client_rect()
-        else
-          # This is a 'swap', we're done
-          swap o,@active
-          return(true)
-        end
-      end
       
       # apply the 'master' rect to the new 'master'
-      @active.set_rect *get_active_rect()    
+      @active.set_rect *get_active_rect()
       
-      return(true)
+      draw @active    
+      
+      return(c)
     end 
     
     # Some would say 'tile'
@@ -284,17 +262,18 @@ module WM
     # @param WM::Client a, the client to be the 'master', defaults to newest managed client
     def draw a = clients.last
       return unless a
+      
       if c=a.get_transient_for
-        p :asked_to_active_transient
-        p @active
         a = c
       end
       
-      clients.each do |c|
+      clients.find_all do |c| c!= a end.each_with_index do |c,i|
         next if c == a
         next if c.get_transient_for()
         
-        c.set_rect *get_next_client_rect
+        n_rect = get_rect_for_client(i)
+        
+        c.set_rect *n_rect unless n_rect == c.rect
       end
       
       set_active(a)
@@ -305,10 +284,13 @@ module WM
     # @param WM::Client c1, the 'a' client
     # @param WM::Client c2, the 'b' client
     def swap c1,c2
-      p a = c1.rect
-      p b = c2.rect
-      c1.set_rect *b
-      c2.set_rect *a
+      i1 = clients.index c1
+      i2 = clients.index c2
+      
+      clients[i1] = c2
+      clients[i2] = c1
+      
+      draw @active
     end
     
     # Centers a rectangle of: width w and height h; on x,y.  
@@ -318,10 +300,18 @@ module WM
       return x,y 
     end
     
+    def get_placement_angle
+      @placement_angle ||= 30
+    end
+    
+    def set_placement_angle(a)
+      @placement_angle = a
+    end
+    
     # Gets the x,y,w,h values of the next client rectangle
     # 
     # @return Array<Integer>, the rectangle
-    def get_next_client_rect
+    def get_rect_for_client i
       max_width=screen[:width_in_pixels]
       max_height=screen[:height_in_pixels]
       
@@ -334,12 +324,20 @@ module WM
       yr = 0.5 * (max_height - pad_y - inactive_client_height)
       xr = 0.5 * (max_width - pad_x - inactive_client_width)
       
-      a = get_current_degree * (Math::PI / 180.0)
+      position = (get_placement_angle() * i)
+      if position >= 360
+        i = (position - 360 - get_placement_angle) / get_placement_angle()
+        position = (get_placement_angle() + 8) * i
+        if position >= 360-8
+          i = (position - 360 - 8 - get_placement_angle) / get_placement_angle()        
+          position = (get_placement_angle() + 16) * i
+        end
+      end
+      
+      a = position * (Math::PI / 180.0)
       
       x = cx + xr * Math.cos(a)
       y = cy + yr * Math.sin(a)
-        
-      increment_current_degree()
         
       x,y = center_on(x,y,inactive_client_width,inactive_client_height)
         
@@ -354,22 +352,6 @@ module WM
       x,y = center_on(x,y,active_client_width,active_client_height)
       
       return x,y,active_client_width,active_client_height
-    end  
-    
-    # Gets the current degree in the ellipse, get_next_client_rect() will increment this
-    def get_current_degree
-      @offset ||= 0
-      @current_degree ||= 0  
-    end
-    
-    # Increments the current degree in the ellipse
-    def increment_current_degree
-      @current_degree += 30
-
-      if get_current_degree() >= 360 - @offset
-        @offset += 15
-        @current_degree = @offset  
-      end
     end  
   end
 end

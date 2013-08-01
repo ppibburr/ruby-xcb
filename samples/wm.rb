@@ -3,10 +3,6 @@ require File.join(File.dirname(__FILE__),"wm","lib","wm.rb")
 require File.join(File.dirname(__FILE__),"wm","lib","wm","fx_fade.rb")
 
 class MyWM < WM::EllipseWM
-  def self.client_class
-    self::Client
-  end
-  
   class self::Client < WM::EllipseWM::Client
     BORDER = WM::BLUE
     
@@ -18,8 +14,14 @@ class MyWM < WM::EllipseWM
     # Shutdown the composition manager to regain input
     #
     # Comment the next line to disable composition effects 
-    include WM::FX::Fade    
+    include WM::FX::Fade 
   end
+    
+
+  #                Alt1               t  
+  add_key_binding WM::KeyMods[:MOD1], 28, :spawn, "x-terminal-emulator"
+  #                Alt1               w
+  add_key_binding WM::KeyMods[:MOD1], 25, :spawn, "x-www-browser"
 end
 
 begin
