@@ -40,17 +40,43 @@ module XCB
 
   extend XCB::Helper
 
+  def self.points2struct(r)
+
+    is_pointer = false
+    is_struct = false
+    
+    r = XCB::find_id(r)  
+   
+    is_pointer = true if r.key == "PointerType"
+    is_pointer = true if r.key == "CvQualifiedType"    
+    is_struct = true if r.key == "Struct"  
+    
+    while r = r.value["type"]
+      t = XCB::find_id(r)
+      
+      is_pointer = true if t.key == "PointerType"
+      is_pointer = true if t.key == "CvQualifiedType"    
+      is_struct = true if t.key == "Struct"
+     
+      r = t
+     
+      break unless r
+    end
+
+    return (is_pointer and is_struct)
+  end
+
   def self.const_missing c
      if q = struct("xcb_"+c.downcase.to_s)
        zz=[]
        cls = q.value
        
        cls["members"].strip.split(" ").each do |m|
-         f = field(m)
+         f = find_id(m)
         
          next unless f.value["type"]
          t = find_id f.value["type"]
-         
+         ot = m
     zt=nil
     while t.value["type"]
       zt = t if t.key == "PointerType"# unless find_id(find_id(rt.value["type"]).value["type"]).key == "Struct"
@@ -65,6 +91,12 @@ module XCB
          
          if t.key == "Struct" or t.key == "Union"
            qq = const_get(t.value["name"].upcase.gsub(/^XCB_/,'').to_sym)
+           p ot
+           if points2struct(ot)
+             qq = qq.by_ref
+           else
+             qq = qq.by_value
+           end
          elsif t.key == "PointerType"
            qq = :pointer 
          else
@@ -75,8 +107,11 @@ module XCB
              h=$1
              unless ss=~/char/
              g = t.value["size"]
-             end
+             
              ss = "u#{h}#{g}"
+             else
+               ss = "uint8"
+             end
            end
            if ss=~/short int/
              ss="int#{t.value["size"]}"
@@ -95,6 +130,8 @@ module XCB
        kls = Class.new(FFI::Struct)
        kls.layout *zz
        
+ #      p [:layout,c, zz]
+       
        const_set(c,kls)
        
        return kls
@@ -109,6 +146,7 @@ module XCB
   def self.debug bool=false
     @debug = bool
   end
+  debug true
   
   def self.log m,q
     return unless @debug
@@ -124,19 +162,36 @@ module XCB
 
   extend FFI::Library
   ffi_lib "xcb","xcb-icccm"
-  CREATE_NOTIFY = 16
-  DESTROY_NOTIFY = 17
-  CLIENT_MESSAGE = 33
-  MAP_REQUEST = 20
+  
+  MOTION_NOTIFY      = 6
+  ENTER_NOTIFY       = 7
+  LEAVE_NOTIFY       = 8
+  CREATE_NOTIFY      = 16
+  DESTROY_NOTIFY     = 17
+  CLIENT_MESSAGE     = 33
+  MAP_REQUEST        = 20
+  UNMAP_NOTIFY       = 18
+  KEY_PRESS          = 2
+  KEY_RELEASE        = 3
+  BUTTON_PRESS       = 4
+  BUTTON_RELEASE     = 5
+  CONFIGURE_NOTIFY   = 22
+  CONFIGURE_REQUEST  = 23
+  
   NONE = 0
   CURRENT_TIME = 0
   
+  KEY_RELEASE_EVENT_T        = KEY_PRESS_EVENT_T
+  BUTTON_RELEASE_EVENT_T     = BUTTON_PRESS_EVENT_T  
+  LEAVE_NOTIFY_EVENT_T   = ENTER_NOTIFY_EVENT_T
+    
 def self.method_missing m,*o,&b
   m = :"xcb_#{m}"
   if fun=function(m.to_s)
     fun = fun.value
-    rt = find_id fun["returns"]
+    rt = find_id w=fun["returns"]
     zt=nil
+    ot = w#rt.value["type"]
     while rt.value["type"]
       zt = rt if rt.key == "PointerType"# unless find_id(find_id(rt.value["type"]).value["type"]).key == "Struct"
       rt = find_id(rt.value["type"])
@@ -154,7 +209,13 @@ def self.method_missing m,*o,&b
     elsif (rt.key == "Struct" or rt.key == "Union") and rt.value["name"] != "xcb_connection_t"
       rt = XCB.const_get(rt.value["name"].upcase.gsub(/^XCB_/,''))
       qrt = rt
-      rt= rt.by_ref
+      
+      if points2struct(ot)
+        rt = rt.by_ref
+      else
+        rt = rt.by_value
+      end
+    
     else
       if rt.key == "PointerType"
         rt = :pointer
@@ -174,6 +235,7 @@ def self.method_missing m,*o,&b
     args = fun["Argument"].map do |a|
       at = nil
       t = find_id(a["type"])
+      ot = a["type"]
       if t.key == "PointerType"
         at = :pointer
       else
@@ -189,7 +251,13 @@ def self.method_missing m,*o,&b
           at = "int8"
         end
         if st=struct(at)
-          at = const_get(at.gsub("xcb_","").upcase).by_ref
+          at = const_get(at.gsub("xcb_","").upcase)
+          
+          if points2struct(ot)
+            at = at.by_ref
+          else
+            at = at.by_value
+          end
         else
           at = at.to_sym
         end

@@ -3,8 +3,8 @@ require 'xmlsimple'
 
 api_xml = File.join(File.dirname(__FILE__),"data","xcb.xml")
 api_info = File.join(File.dirname(__FILE__),"data","xcb.marshal")
-
-system "gccxml #{i = ARGV[0] || "/usr/include/xcb"}/xcb_icccm.h -fxml=#{api_info}"
+p api_info
+p system "gccxml #{i = ARGV[0] || "/usr/include/xcb"}/xcb_icccm.h -fxml=#{api_xml}"
 
 c=XmlSimple.xml_in(api_xml)
 

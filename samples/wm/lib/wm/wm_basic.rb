@@ -35,15 +35,22 @@ module WM
     
     # Apply attributes to the 'root' window to get events rolling 
     def init
+      p 9
       window_root = screen[:root];
+      p window_root
       mask = XCB::CW_EVENT_MASK;
       values= ary2pary([ ROOT_WINDOW_EVENT_MASK]);
-     
+     p 8
       cookie = XCB::change_window_attributes_checked(connection, window_root, mask, values);
+      p cookie
+      p connection
+      
       error = XCB::request_check(connection, cookie);
+      
       XCB::flush(connection);
-    
+    p 8
       if error.to_ptr != FFI::Pointer::NULL
+      p 88
         on_abort(0)
       end
        
@@ -260,6 +267,7 @@ module WM
     end
       
     rescue => e
+    p e
       on_abort(2,e)
     end
     
